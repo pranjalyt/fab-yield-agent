@@ -1,0 +1,8 @@
+openenv-core
+pydantic>=2.0.0
+fastapi
+uvicorn
+numpy
+requests
+python-dotenv
+ 
