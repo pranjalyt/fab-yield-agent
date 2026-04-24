@@ -1,169 +1,180 @@
 """
-prompt_builder.py — Build text prompts from FabObservation.
+prompt_builder.py — Builds the structured text prompt for the LLM agent.
 
-This is the agent's entire view of the world. The quality of this
-prompt directly affects training — structured, information-dense prompts
-lead to better GRPO trajectories.
+This is the full cognitive context the agent receives at each step.
+The agent outputs XML tags which the env parses back into FabAction.
 """
+import re
+from typing import Optional, Dict
+from environment.models import FabObservation, FabAction
 
-from typing import Dict, Any
 
+SYSTEM_PROMPT = """You are an expert semiconductor process integration engineer.
+Your goal is to optimize wafer yield by running experiments and identifying 
+the root cause of yield loss.
 
-def build_prompt(obs: Dict[str, Any]) -> str:
-    """
-    Build the agent's text prompt from a FabObservation dict.
+You have a limited experiment budget. Think like a scientist:
+- In early steps (exploration): vary parameters broadly to map the response surface
+- In middle steps (hypothesis): focus on your suspected bottleneck parameter
+- In late steps (exploitation): converge on the optimum
+- On step 12 or submit: propose your final process recipe
 
-    The prompt includes:
-    - Episode meta (step, budget, target)
-    - Full experiment history (params + yield + defect)
-    - Phase hint (guides long-horizon planning)
-    - Reviewer feedback (if recipe was rejected last step)
-    - Parameter ranges (so agent knows the valid space)
-    - Output format instructions (XML tags for structured parsing)
-    """
-    step = obs["step"]
-    budget = obs["budget_remaining"]
-    best = obs["current_best_yield"]
-    target = obs["target_yield"]
-    phase = obs["phase"]
-    phase_hint = obs.get("phase_hint", "")
-    reviewer_feedback = obs.get("reviewer_feedback", "")
-    history = obs.get("experiment_history", [])
-    active_params = obs.get("active_params", [])
-    param_ranges = obs.get("param_ranges", {})
-
-    # ─── Header ──────────────────────────────────────────────────────────────
-    prompt = f"""You are a semiconductor process engineer optimizing wafer yield at a chip fab.
-
-═══ CURRENT STATE ═══════════════════════════════════════════
-  Experiments run:    {step - 1}/{step - 1 + budget}
-  Budget remaining:   {budget} experiments
-  Current best yield: {best:.1f}%
-  Target yield:       >{target}%
-  Phase:              {phase.upper()} — {phase_hint}
-"""
-
-    # ─── Reviewer feedback (if any) ──────────────────────────────────────────
-    if reviewer_feedback:
-        prompt += f"""
-⚠ REVIEWER FEEDBACK FROM LAST SUBMISSION:
-  {reviewer_feedback}
-"""
-
-    # ─── Experiment history ───────────────────────────────────────────────────
-    prompt += "\n═══ EXPERIMENT HISTORY ══════════════════════════════════════\n"
-    if not history:
-        prompt += "  No experiments yet.\n"
-    else:
-        for rec in history:
-            param_str = ", ".join(
-                f"{k}={_fmt(v)}" for k, v in rec["params"].items()
-            )
-            prompt += f"  Exp {rec['step']}: {param_str}\n"
-            prompt += f"    → Yield: {rec['yield_pct']:.1f}%  |  Defects: {rec['defect']}"
-            if rec.get("primary_bottleneck_guess"):
-                prompt += f"  |  Your guess: {rec['primary_bottleneck_guess']}"
-            prompt += "\n"
-
-    # ─── Parameter space ──────────────────────────────────────────────────────
-    prompt += "\n═══ PARAMETER SPACE ══════════════════════════════════════════\n"
-    for param in active_params:
-        if param in param_ranges:
-            lo, hi = param_ranges[param]
-            prompt += f"  {param}: [{_fmt(lo)} — {_fmt(hi)}]\n"
-
-    # ─── Action instructions ──────────────────────────────────────────────────
-    submit_hint = " (set submit: true to end episode)" if step >= 9 else ""
-
-    prompt += f"""
-═══ YOUR ACTION ══════════════════════════════════════════════
-Choose your next experiment parameters{submit_hint}.
-State which parameter you believe is the PRIMARY yield bottleneck and why.
-
-Defect guide:
-  edge_ring      → pressure or gas flow is off (etch non-uniformity)
-  center_spot    → temperature or RF power issue (hotspot)
-  random_scatter → dopant concentration problem
-  none           → you are in a good region of parameter space
-
-Output your response in this EXACT format (required for parsing):
+ALWAYS output your response in EXACTLY this XML format:
 <experiment>
-"""
-    for param in active_params:
-        if param in param_ranges:
-            lo, hi = param_ranges[param]
-            prompt += f"  {param}: [{_fmt(lo)}-{_fmt(hi)}]\n"
-    prompt += "  submit: [true/false]\n"
-    prompt += """</experiment>
+  temp: [value]
+  etch_time: [value]
+  pressure: [value]
+  dopant: [value]
+  spin_speed: [value]
+</experiment>
 <diagnosis>
-  primary_bottleneck: [parameter name]
-  reasoning: [one sentence — what evidence supports your choice]
-</diagnosis>
-"""
-
-    return prompt
+  primary_bottleneck: [parameter name, exactly as listed in active params]
+  reasoning: [one sentence explaining your causal reasoning]
+  submit: [true/false — true only when ready to submit final recipe]
+</diagnosis>"""
 
 
-def _fmt(v: float) -> str:
-    """Format a float cleanly (scientific for very small/large, else decimal)."""
-    if v == 0:
-        return "0"
-    if abs(v) >= 1e13 or (abs(v) < 0.01 and v != 0):
-        return f"{v:.2e}"
-    if abs(v) >= 1000:
-        return f"{v:.0f}"
-    return f"{v:.2f}"
-
-
-def parse_action(text: str) -> Dict[str, Any]:
+def build_prompt(obs: FabObservation) -> str:
     """
-    Parse XML-tagged agent output into a structured action dict.
-
-    Handles common LLM formatting errors gracefully:
-    - Missing tags → empty dict (env uses param midpoints)
-    - Non-numeric values → skipped
-    - Extra whitespace/newlines → stripped
+    Construct the full text prompt from a FabObservation.
+    This is what gets passed to the LLM at each step.
     """
-    import re
+    lines = []
 
-    action = {
-        "params": {},
-        "primary_bottleneck": "",
-        "reasoning": "",
-        "submit": False,
+    # ── Header ────────────────────────────────────────────────────────────────
+    lines.append(f"CURRENT STATE:")
+    lines.append(f"- Step: {obs.step + 1}/{12}")
+    lines.append(f"- Phase: {obs.phase.upper()}")
+    lines.append(f"- Budget remaining: {obs.budget_remaining} experiments")
+    lines.append(f"- Current best yield: {obs.current_best_yield:.1f}%")
+    lines.append(f"- Target yield: >{obs.target_yield:.0f}%")
+    lines.append("")
+
+    # ── Active parameters and ranges ─────────────────────────────────────────
+    lines.append("ACTIVE PARAMETERS (with allowed ranges):")
+    for p in obs.active_params:
+        lo, hi = obs.param_ranges[p]
+        lines.append(f"  {p}: [{lo}, {hi}]")
+    lines.append("")
+
+    # ── Experiment history ────────────────────────────────────────────────────
+    if obs.experiment_history:
+        lines.append("EXPERIMENT HISTORY:")
+        for r in obs.experiment_history:
+            param_str = ", ".join(
+                f"{k}={v:.4g}" for k, v in r.params.items()
+            )
+            lines.append(
+                f"  Exp {r.step}: {param_str} → "
+                f"Yield: {r.yield_pct}%, Defect: {r.defect}"
+            )
+        lines.append("")
+
+    # ── Agent's running hypothesis ────────────────────────────────────────────
+    if obs.current_hypothesis:
+        lines.append(f"YOUR CURRENT HYPOTHESIS: {obs.current_hypothesis}")
+        lines.append("")
+
+    # ── Reviewer feedback (if any) ────────────────────────────────────────────
+    if obs.reviewer_feedback:
+        lines.append(f"⚠️  REVIEWER FEEDBACK: {obs.reviewer_feedback}")
+        lines.append("")
+
+    # ── Phase-specific instruction ────────────────────────────────────────────
+    phase_instructions = {
+        "exploration": (
+            "PHASE: EXPLORATION — Vary parameters broadly. "
+            "Your goal is to understand which parameters matter most. "
+            "Try experiments that differ significantly from each other."
+        ),
+        "hypothesis": (
+            "PHASE: HYPOTHESIS — You have data. Now test your causal theory. "
+            "Isolate your suspected primary bottleneck by changing it while "
+            "holding others near their best-so-far values."
+        ),
+        "exploitation": (
+            "PHASE: EXPLOITATION — Converge on the optimum. "
+            "Make fine adjustments around your best result so far. "
+            "You're close — don't explore, exploit."
+        ),
+        "submission": (
+            "PHASE: SUBMISSION — This is your final experiment. "
+            "Submit your best process recipe. "
+            "Set submit: true in your diagnosis. "
+            "The Senior Engineer will review your recipe against "
+            "production qualification constraints."
+        ),
     }
+    lines.append(phase_instructions.get(obs.phase, ""))
+    lines.append("")
 
-    # Extract <experiment> block
-    exp_match = re.search(r"<experiment>(.*?)</experiment>", text, re.DOTALL | re.IGNORECASE)
+    # ── Action request ────────────────────────────────────────────────────────
+    lines.append("YOUR ACTION:")
+    lines.append(
+        "Output ONLY the XML tags below. No preamble, no explanation outside the tags."
+    )
+
+    # Build XML template with current best as defaults
+    lines.append("")
+    lines.append("<experiment>")
+    for p in obs.active_params:
+        lo, hi = obs.param_ranges[p]
+        default = (lo + hi) / 2
+        lines.append(f"  {p}: {default:.4g}")
+    lines.append("</experiment>")
+    lines.append("<diagnosis>")
+    lines.append(f"  primary_bottleneck: {obs.active_params[0]}")
+    lines.append("  reasoning: [your one-sentence causal reasoning]")
+    lines.append("  submit: false")
+    lines.append("</diagnosis>")
+
+    return "\n".join(lines)
+
+
+def parse_action(text: str, active_params: list) -> FabAction:
+    """
+    Parse the LLM's XML output into a FabAction.
+    Robust to extra whitespace and minor formatting variations.
+    """
+    params = {}
+
+    # Extract experiment block
+    exp_match = re.search(r"<experiment>(.*?)</experiment>", text, re.DOTALL)
     if exp_match:
-        for line in exp_match.group(1).strip().split("\n"):
-            line = line.strip()
-            if ":" not in line:
-                continue
-            key, _, val = line.partition(":")
-            key = key.strip().lower()
-            val = val.strip()
-            if key == "submit":
-                action["submit"] = val.lower() in ("true", "yes", "1")
-            else:
+        exp_block = exp_match.group(1)
+        for p in active_params:
+            # Match "param: value" patterns
+            m = re.search(rf"{re.escape(p)}\s*:\s*([0-9eE+\-.]+)", exp_block)
+            if m:
                 try:
-                    action["params"][key] = float(val)
+                    params[p] = float(m.group(1))
                 except ValueError:
-                    pass  # skip malformed values
+                    pass
 
-    # Extract <diagnosis> block
-    diag_match = re.search(r"<diagnosis>(.*?)</diagnosis>", text, re.DOTALL | re.IGNORECASE)
+    # Extract diagnosis block
+    primary_bottleneck = active_params[0]  # fallback
+    reasoning = ""
+    submit = False
+
+    diag_match = re.search(r"<diagnosis>(.*?)</diagnosis>", text, re.DOTALL)
     if diag_match:
-        for line in diag_match.group(1).strip().split("\n"):
-            line = line.strip()
-            if ":" not in line:
-                continue
-            key, _, val = line.partition(":")
-            key = key.strip().lower()
-            val = val.strip()
-            if "bottleneck" in key:
-                action["primary_bottleneck"] = val
-            elif "reasoning" in key or "reason" in key:
-                action["reasoning"] = val
+        diag_block = diag_match.group(1)
 
-    return action
+        pb_match = re.search(r"primary_bottleneck\s*:\s*(\S+)", diag_block)
+        if pb_match:
+            primary_bottleneck = pb_match.group(1).strip().lower()
+
+        r_match = re.search(r"reasoning\s*:\s*(.+)", diag_block)
+        if r_match:
+            reasoning = r_match.group(1).strip()
+
+        s_match = re.search(r"submit\s*:\s*(true|false)", diag_block, re.IGNORECASE)
+        if s_match:
+            submit = s_match.group(1).lower() == "true"
+
+    return FabAction(
+        params=params,
+        primary_bottleneck=primary_bottleneck,
+        reasoning=reasoning,
+        submit=submit,
+    )
