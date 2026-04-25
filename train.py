@@ -16,6 +16,7 @@ Requirements:
 # ─── IMPORTS ────────────────────────────────────────────────────────────────
 import os
 import re
+import wandb
 import sys
 import torch
 import requests
@@ -282,6 +283,15 @@ def run_episode(model, tokenizer, difficulty: int = 1) -> tuple[list, float]:
 # ─── GRPO TRAINING LOOP ─────────────────────────────────────────────────────
 def train(model, tokenizer):
     """Micro-batched GRPO: rollouts → advantage normalisation → gradient update."""
+
+
+    #init wandb for saving 
+    wandb.init(
+            project="tensor-titans-fab",
+            name="A10G-150-Epoch-Burn",
+            config={"epochs": EPOCHS, "group_size": GROUP_SIZE, "learning_rate": LR}
+        )
+
     optimizer = AdamW(model.parameters(), lr=LR)
     print(f"⚙️  GRPO ready | epochs={EPOCHS}  group_size={GROUP_SIZE}  lr={LR}\n")
 
@@ -339,9 +349,26 @@ def train(model, tokenizer):
         avg_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+
+        #save log for wandb
+        wandb.log({
+            "epoch": epoch + 1,
+            "mean_reward": mean_reward.item(),
+            "grpo_loss": avg_loss.item()
+        })
         print(f"✅ Update done | GRPO Loss: {avg_loss.item():.4f}")
 
+        #save every 25 checkpoints
+        if (epoch + 1) % 25 == 0:
+            print(f"💾 Saving checkpoint at Epoch {epoch + 1}...")
+            model.save_pretrained(f"./outputs/checkpoint-epoch-{epoch + 1}")
+            tokenizer.save_pretrained(f"./outputs/checkpoint-epoch-{epoch + 1}")
+
     print("\n🎉 Training complete!")
+    print("💾 Saving final model...")
+    model.save_pretrained("./outputs/final_model")
+    tokenizer.save_pretrained("./outputs/final_model")
+    wandb.finish()
 
 
 # ─── ENTRY POINT ────────────────────────────────────────────────────────────
