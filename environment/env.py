@@ -226,43 +226,49 @@ class FabYieldEnv:
     ) -> Dict[str, float]:
         rewards = {}
 
-        # 1. YIELD REWARD — dense, every step (50%)
-        rewards["yield"] = min(yield_pct / TARGET_YIELD, 1.0)
-
-        # 2. EFFICIENCY REWARD — sparse, only if target hit (20%)
-        if yield_pct >= TARGET_YIELD:
-            rewards["efficiency"] = max(0.0, (MAX_STEPS - self._obs.step + 1) / MAX_STEPS)
+        # 1. YIELD REWARD — Make it a steep hill, not a freebie
+        # 0 points for anything under 50% yield. 1.0 points for hitting target.
+        yield_floor = 50.0
+        if yield_pct <= yield_floor:
+            rewards["yield"] = 0.0
         else:
-            rewards["efficiency"] = 0.0
+            rewards["yield"] = min((yield_pct - yield_floor) / (TARGET_YIELD - yield_floor), 1.0)
 
-        # 3. CAUSAL ATTRIBUTION BONUS — parsed from agent's diagnosis (15%)
+        # 2. CAUSAL ATTRIBUTION — Score this first
         causal = self.rsm.causal_structure()
         attributed = action.primary_bottleneck.strip().lower()
         true_primary = causal["primary_param"].lower()
         true_secondary = [p.lower() for p in causal["secondary_params"]]
 
-        if attributed == true_primary:
-            rewards["causal"] = 1.0
-        elif attributed in true_secondary:
-            rewards["causal"] = 0.4   # partial credit
-        else:
-            rewards["causal"] = 0.0
+        if attributed == true_primary: rewards["causal"] = 1.0
+        elif attributed in true_secondary: rewards["causal"] = 0.4
+        else: rewards["causal"] = 0.0
 
-        # 4. STABILITY REWARD — terminal only (15%)
+        # 3. EFFICIENCY REWARD — Gated behind competence
+        # You only get the speed bonus if you ACTUALLY fixed the yield AND found the root cause
+        if yield_pct >= TARGET_YIELD and rewards["causal"] > 0:
+            rewards["efficiency"] = max(0.0, (MAX_STEPS - self._obs.step + 1) / MAX_STEPS)
+        else:
+            rewards["efficiency"] = 0.0
+
+        # 4. STABILITY REWARD — Penalize 1-step blind submissions
         if done and submitted_params:
-            lot_std = self.rsm.lot_variance(submitted_params, n_lots=20)
-            rewards["stability"] = max(0.0, 1.0 - lot_std / 5.0)
-            if not reviewer_approved:
-                rewards["stability"] *= 0.3   # penalty for failing review
+            if self._obs.step < 3: # Punish guessing without experimenting
+                rewards["stability"] = 0.0
+            else:
+                lot_std = self.rsm.lot_variance(submitted_params, n_lots=20)
+                rewards["stability"] = max(0.0, 1.0 - lot_std / 5.0)
+                if not reviewer_approved:
+                    rewards["stability"] *= 0.3
         else:
             rewards["stability"] = 0.0
 
-        # Composite
+        # Composite (Weights remain the same)
         rewards["total"] = (
-            0.50 * rewards["yield"]
-            + 0.20 * rewards["efficiency"]
-            + 0.15 * rewards["causal"]
-            + 0.15 * rewards["stability"]
+            0.50 * rewards["yield"] +
+            0.20 * rewards["efficiency"] +
+            0.15 * rewards["causal"] +
+            0.15 * rewards["stability"]
         )
 
         return {k: round(float(v), 4) for k, v in rewards.items()}

@@ -107,6 +107,20 @@ class RSMSimulator:
 
         # Compute theoretical optimum: x* = -beta / (2*alpha) in normalized space
         opt_x = np.clip(-self.beta / (2 * self.alpha), -1.0, 1.0)
+
+        # --- NEW REALISTIC YIELD MATH ---
+        # 1. Calculate what the surface value is at the optimum
+        max_surface_val = float(np.dot(self.beta, opt_x) + np.dot(self.alpha, opt_x ** 2))
+        for (i, j), coef in self.interactions.items():
+            max_surface_val += coef * opt_x[i] * opt_x[j]
+            
+        # 2. Anchor the peak at ~95%
+        target_max_yield = rng.uniform(0.94, 0.98)
+        
+        # 3. Base yield is adjusted so the absolute peak hits the target
+        self.base_yield = target_max_yield - max_surface_val
+        
+        # 4. Denormalize optimum params for ground truth
         self.optimum_params = {}
         for i, p in enumerate(self.active_params):
             lo, hi = PARAM_RANGES[p]
