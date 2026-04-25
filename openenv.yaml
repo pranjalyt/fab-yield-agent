@@ -1,86 +1,56 @@
-name: semiconductor-fab-yield-agent
-version: 1.0.0
+name: hardware-optimization-fleet
+version: 1.1.0
 description: >
-  RL environment where an LLM agent learns to optimize wafer yield in a
-  semiconductor fabrication plant. The agent runs virtual experiments on a
-  15-parameter process space, interprets yield and defect feedback, forms causal
-  hypotheses about yield bottlenecks, and submits a production-ready process
-  recipe — all within a 12-experiment budget.
+  A multi-agent, cross-domain RL environment. The LLM agent acts as a Process
+  Engineer  optimizing complex Design of Experiments (DoE). Features Test-Time
+  Compute (Claude-style reasoning), dynamic production tasks (GPU vs TPU
+  binning), and a multi-agent gauntlet including a  Financial Controller and a
+  Senior Reviewer.
 author: TensorTitans
-theme: long_horizon_planning # Theme #2 + #3 (World Modeling / Professional Tasks)
+theme: long_horizon_planning
 
 tasks:
-  - name: easy_yield_optimization
-    description: Optimize 5 process parameters to achieve >80% wafer yield
-    difficulty: easy
-    params_active: 5
-    budget: 8
-    target_yield: 80.0
-
-  - name: medium_yield_optimization
-    description: Navigate 10 parameters, identify primary yield bottleneck, achieve >88%
-    difficulty: medium
-    params_active: 10
-    budget: 10
-    target_yield: 88.0
-
-  - name: hard_yield_optimization
-    description: Full 15-parameter space, reviewer constraints active, achieve >92%
+  - name: Data Center GPU (H200X)
+    description: Maximize absolute yield for flagship performance chips. High
+      budget, high volatility.
     difficulty: hard
-    params_active: 15
-    budget: 12
-    target_yield: 92.0
+    target_yield: 95.0
+
+  - name: Edge TPU (Mobile Neural Engine)
+    description: Optimize for thermal efficiency. Financial Controller will reject
+      high temp/power recipes.
+    difficulty: hard
+    target_yield: 90.0
 
 action_space:
   type: dict
   fields:
+    - think # str — Test-Time Compute analysis (enforced prior to action)
     - params # Dict[str, float] — experiment parameter values
-    - primary_bottleneck # str — agent's causal hypothesis (parsed for reward)
-    - reasoning # str — one sentence explanation
-    - submit # bool — end episode and submit recipe for reviewer
-
-observation_space:
-  type: dict
-  fields:
-    - step
-    - phase # exploration / hypothesis / exploitation / submission
-    - budget_remaining
-    - target_yield
-    - current_best_yield
-    - experiment_history # full history of params, yield, defect, and agent guesses
-    - phase_hint # natural language guidance for long-horizon planning
-    - reviewer_feedback # populated when reviewer rejects a submitted recipe
-    - active_params # which parameters are active this episode
-    - param_ranges # valid range for each active parameter
-
-reward_range: [ 0.0, 1.0 ]
+    - primary_bottleneck # str — agent's causal hypothesis
+    - reasoning # str — short explanation
+    - submit # bool — end episode and submit recipe
 
 reward_components:
   yield_reward:
-    weight: 0.50
-    description: Normalized yield improvement toward target. Dense, every step.
-
-  efficiency_reward:
-    weight: 0.20
-    description: Bonus for hitting target in fewer experiments. Sparse.
-
+    weight: 0.40
+    description: Normalized yield improvement.
   causal_attribution:
-    weight: 0.15
-    description: >
-      Reward for correctly identifying the primary yield bottleneck parameter.
-      Scored by parsing agent's natural language diagnosis against RSM ground
-      truth. Full credit (1.0) for primary param, partial (0.4) for secondary.
-
-  stability_reward:
-    weight: 0.15
-    description: >
-      Terminal-only. Rewards recipes with low lot-to-lot variance. Penalized if
-      recipe fails senior reviewer qualification.
+    weight: 0.20
+    description: Strict parsing of the agent's bottleneck diagnosis against RSM
+      ground truth.
+  reasoning_reward:
+    weight: 0.20
+    description: PRM reward for Test-Time Compute deduction length and quality.
+  financial_penalty:
+    weight: 0.20
+    description: Massive penalty if the Financial Controller agent rejects the recipe cost.
 
 multi_agent:
   senior_engineer_reviewer:
     type: rule_based
-    description: >
-      Reviews submitted recipes against episode-varying qualification
-      constraints. Constraints change each episode (Snorkel AI bonus). Rejection
-      triggers feedback loop requiring agent adaptation (Fleet AI bonus).
+    description: Evaluates physical parameter boundaries at final submission.
+  financial_controller:
+    type: rule_based
+    description: intercepts every step. Rejects and penalizes actions that exceed
+      the energy/budget constraints of the specific Task tier.
