@@ -100,7 +100,7 @@ def startup_event():
     
     # 1. Set the exact environment variables
     train_env = os.environ.copy()
-    train_env["EPOCHS"] = "5"          # Change to "150" when ready for the real burn
+    train_env["EPOCHS"] = "2"          # Change to "150" when ready for the real burn
     train_env["GROUP_SIZE"] = "8"       # G=8 for the A10G math stability
     train_env["SPACE_URL"] = "http://localhost:7860"
     
