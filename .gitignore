@@ -1,0 +1,81 @@
+# ─── fab-yield-agent · .gitignore ──────────────────────────────────────────
+
+# ── Secrets (NEVER commit these) ─────────────────────────────────────────────
+.env
+*.pem
+*.key
+secrets/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+
+# ── Virtual Environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Jupyter / Colab ───────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+# Keep .ipynb files themselves tracked (they're source)
+# but ignore their checkpoint noise
+
+# ── ML / Model Artefacts ──────────────────────────────────────────────────────
+# Trained model weights and checkpoints can be huge — push to HF Hub instead
+checkpoints/
+runs/
+outputs/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.gguf
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+# Raw / processed data shouldn't live in git — use HF Datasets or DVC
+data/raw/
+data/processed/
+data/cache/
+*.csv
+*.parquet
+*.jsonl
+*.arrow
+
+# ── Logs & Profiling ──────────────────────────────────────────────────────────
+logs/
+*.log
+wandb/
+tensorboard/
+lightning_logs/
+
+# ── OS Cruft ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+# Keep Dockerfile tracked; ignore local build cache
+.dockerignore
+docker-compose.override.yml
+
+# ── HF Spaces cache ──────────────────────────────────────────────────────────
+.cache/
+huggingface/

@@ -6,3 +6,8 @@ numpy
 requests
 python-dotenv
 scipy
+unsloth
+trl
+peft
+accelerate
+bitsandbytes
