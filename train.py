@@ -38,7 +38,7 @@ API_HEADERS = {
 
 MAX_SEQ_LENGTH = 2048
 EPOCHS     = int(os.environ.get("EPOCHS",        150))
-GROUP_SIZE = int(os.environ.get("GROUP_SIZE",    8))   # G=8 minimum for stability
+GROUP_SIZE = int(os.environ.get("GROUP_SIZE",    12))   # G=8 minimum for stability
 LR         = float(os.environ.get("LEARNING_RATE", 5e-6))
 
 
