@@ -308,12 +308,14 @@ def train(model, tokenizer):
 
             if (epoch + 1) % 25 == 0:
                 print(f"💾 Saving checkpoint at epoch {epoch + 1}...")
-                model.save_pretrained(f"./outputs/checkpoint-epoch-{epoch + 1}")
-                tokenizer.save_pretrained(f"./outputs/checkpoint-epoch-{epoch + 1}")
+                # Save both to the same folder in the root directory
+                model.save_pretrained(f"checkpoint-epoch-{epoch + 1}")
+                tokenizer.save_pretrained(f"checkpoint-epoch-{epoch + 1}")
 
         print("\n🎉 Training complete!")
-        model.save_pretrained("./outputs/final_model")
-        tokenizer.save_pretrained("./outputs/final_model")
+        # Final save to a single folder
+        model.save_pretrained("final_model_tensor_titans")
+        tokenizer.save_pretrained("final_model_tensor_titans")
 
     finally:
         # Ensures W&B flushes its final metrics even if training crashes mid-run
