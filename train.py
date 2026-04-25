@@ -54,7 +54,7 @@ MAX_SEQ_LENGTH = 2048
 
 # GRPO hyperparams — override any of these via .env or shell exports
 EPOCHS     = int(os.environ.get("EPOCHS",        5))
-GROUP_SIZE = int(os.environ.get("GROUP_SIZE",    4))
+GROUP_SIZE = int(os.environ.get("GROUP_SIZE",    12))
 LR         = float(os.environ.get("LEARNING_RATE", 5e-6))
 
 
@@ -176,6 +176,8 @@ def build_prompt(obs: dict) -> str:
     if not history:
         prompt += "  No experiments yet.\n"
     else:
+        #SLICING TO ONLY SHOW THE LAST 5 EXPERIMENTS so that the prompt dosent become massive after some time
+        recent_history = history[-5:]
         for rec in history:
             param_str = ", ".join(f"{k}={_fmt(v)}" for k, v in rec["params"].items())
             prompt += f"  Exp {rec['step']}: {param_str}\n"
@@ -316,10 +318,16 @@ def train(model, tokenizer):
 
         # ── Phase 2: Advantage normalisation ──
         rewards_tensor = torch.tensor(group_rewards, dtype=torch.float32)
+
+        rewards_tensor = torch.clamp(rewards_tensor, min=-1.5, max=1.5)
+
         mean_reward    = rewards_tensor.mean()
         std_reward     = rewards_tensor.std() + 1e-8
         advantages     = (rewards_tensor - mean_reward) / std_reward
         print(f"\n📊 Mean: {mean_reward.item():.3f} | Std: {std_reward.item():.3f}")
+
+        #clear VRAM so that no OOM
+        torch.cuda.empty_cache()
 
         # ── Phase 3: Gradient update (training mode) ──
         FastLanguageModel.for_training(model)
