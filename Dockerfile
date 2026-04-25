@@ -1,28 +1,34 @@
-# Use a lightweight Python 3.11 image
+# 1. Start with the base Python image
 FROM python:3.11-slim
 
-# Create a non-root user (Required by Hugging Face Spaces)
-RUN useradd -m -u 1000 user
-USER user
+# 2. Stay as ROOT to install system tools
+USER root
 
+# 3. Install the compiler (build-essential) and Git
+# This is the "magic" step that fixes the Triton & Unsloth errors
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. Create the Hugging Face user
+RUN useradd -m -u 1000 user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
-# Set the working directory
 WORKDIR $HOME/app
 
-# Copy requirements first to leverage Docker cache
+# 5. Copy requirements and install them
+# We stay as ROOT for a second here to ensure global permissions are clean
 COPY --chown=user requirements.txt .
-
-# Install dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your environment code
+# 6. Copy the rest of the code
 COPY --chown=user . .
 
-# Expose the mandatory Hugging Face port
-EXPOSE 7860
+# 7. Switch to USER for final execution (HF Security Requirement)
+USER user
 
-# Launch the OpenEnv FastAPI server
+# 8. Launch the server (which triggers train.py via the startup event)
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]
