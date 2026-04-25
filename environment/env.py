@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Tuple
 
 # 🛑 1. STRICT OPENENV COMPLIANCE
-from openenv import Environment 
+from openenv.core.env_server import Environment 
 
 from environment.rsm_simulator import RSMSimulator, PARAM_RANGES, PHASE_PARAMS
 from agents.senior_reviewer import SeniorEngineerReviewer, sample_episode_constraints
