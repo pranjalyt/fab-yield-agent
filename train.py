@@ -20,6 +20,9 @@ import requests
 from torch.optim import AdamW
 from unsloth import FastLanguageModel
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -205,7 +208,7 @@ def run_episode(model, tokenizer, difficulty: int = 1) -> tuple[list, float]:
 def train(model, tokenizer):
     wandb.init(
         project="tensor-titans-fab",
-        name="A10G-150-Epoch-Burn",
+        name=f"H100-Final-Burn-G{GROUP_SIZE}-E{EPOCHS}",
         config={"epochs": EPOCHS, "group_size": GROUP_SIZE, "learning_rate": LR},
     )
     optimizer = AdamW(model.parameters(), lr=LR)
@@ -278,25 +281,32 @@ def train(model, tokenizer):
             wandb.log({"epoch": epoch + 1, "mean_reward": r_mean.item(), "grpo_loss": avg_loss})
             print(f"✅ Update done | GRPO Loss: {avg_loss:.4f}")
 
-            if (epoch + 1) % 25 == 0:
-                print(f"💾 Saving checkpoint at epoch {epoch + 1}...")
-                ckpt_path = f"/tmp/checkpoint-epoch-{epoch + 1}"
-                model.save_pretrained(ckpt_path)
-                tokenizer.save_pretrained(ckpt_path)
+            # 💾 Defensive Checkpointing: Save every 5 epochs
+            if (epoch + 1) % 5 == 0:
+                checkpoint_name = f"tensor-titans-safety-epoch-{epoch + 1}"
+                print(f"\n💾 Saving safety checkpoint: {checkpoint_name}...")
+                
+                # Save locally to the NVMe drive
+                model.save_pretrained(checkpoint_name)
+                tokenizer.save_pretrained(checkpoint_name)
+                
+                print(f"✅ Checkpoint {checkpoint_name} secured.")
 
-        # Final Save Logic
+        # ==========================================
+        # 🛑 OUTSIDE THE FOR LOOP: FINAL SAVE & PUSH
+        # ==========================================
         print("\n🎉 Training complete!")
-        final_path = "/tmp/final_model_tensor_titans"
+        final_path = "final_model_tensor_titans"
         model.save_pretrained(final_path)
         tokenizer.save_pretrained(final_path)
         
         try:
             print("☁️ Pushing final model to Hugging Face Hub...")
-            model.push_to_hub("tensor-titans-qwen-7b-grpo", token=HF_TOKEN)
-            tokenizer.push_to_hub("tensor-titans-qwen-7b-grpo", token=HF_TOKEN)
+            model.push_to_hub("tensor-titans-qwen-7b-h100", token=HF_TOKEN)
+            tokenizer.push_to_hub("tensor-titans-qwen-7b-h100", token=HF_TOKEN)
             print("🚀 Model successfully pushed to your HF Profile!")
         except Exception as e:
-            print(f"⚠️ Hub push failed: {e}. Find files in /tmp/.")
+            print(f"⚠️ Hub push failed: {e}. Find files in local folder.")
 
     finally:
         wandb.finish()
