@@ -16,6 +16,20 @@ An RL environment where an LLM agent learns to be a **process integration engine
 
 ---
 
+## 🔗 Quick Links
+
+| Resource | Link |
+|---|---|
+| 🤗 HF Space (Environment API) | [semiconductor-yield-agent](https://huggingface.co/spaces/PranjalZetsu/semiconductor-yield-agent) |
+| 🎮 Interactive UI | [semiconductor-yield-agent-ui](https://huggingface.co/spaces/PranjalZetsu/semiconductor-yield-agent-ui) |
+| 🌐 Frontend Dashboard | [fab-ui-phi.vercel.app](https://fab-ui-phi.vercel.app) |
+| 🧠 Trained Model | [Fab_Yield_Agent_Qwen-q4](https://huggingface.co/PranjalZetsu/Fab_Yield_Agent_Qwen-q4) |
+| 📓 Training Notebook | [fab_yield_agent_training.ipynb](https://huggingface.co/spaces/PranjalZetsu/semiconductor-yield-agent/blob/main/fab_yield_agent_training.ipynb) |
+| 📊 W&B Training Run | [tensor-titans-fab on W&B](https://wandb.ai/gamersdelightxd-/tensor-titans-fab?nw=nwuserpranjal_dubey) |
+| 📝 Blog Post | [Medium — fab-yield-agent](https://medium.com/p/9d5e78528f95) |
+
+---
+
 ## 🧠 What is this?
 
 A fab produces chips. Each wafer has a **yield** (% of working chips). Yield is controlled by ~15 process parameters (temperature, pressure, etch time, dopant concentration, etc.). The agent must:
@@ -59,6 +73,21 @@ lot-to-lot variance        →   reward_dict (4 components)
 
 ---
 
+## 📊 Training Results
+
+Trained using **GRPO** (Group Relative Policy Optimization) via Unsloth + HuggingFace TRL on Qwen2.5-7B-Instruct (4-bit quantized).
+
+**Key finding:** G=24 group size with 42 epochs outperformed G=8 with 150 epochs — larger groups produce cleaner advantage estimates exactly when the agent has no baseline yet.
+
+| Run | Epochs | Group Size | Result |
+|---|---|---|---|
+| Run 1 | 150 | G=8 | Noisy gradients, unstable early training |
+| Run 2 | 42 | G=24 | Tighter reward variance, better generalization ✅ |
+
+📊 **[Full W&B training curves → tensor-titans-fab](https://wandb.ai/gamersdelightxd-/tensor-titans-fab?nw=nwuserpranjal_dubey)**
+
+---
+
 ## 🚀 API
 
 ### `POST /reset`
@@ -93,8 +122,13 @@ uvicorn server:app --host 0.0.0.0 --port 7860
 
 ---
 
-## 📊 Training
+| 🎥 Demo Video | [YouTube](https://youtu.be/GXZUcbty9gg) |
 
-See `training/colab_training.ipynb` for the full GRPO training loop using TRL + Unsloth.
+
+## 📓 Training
+
+Full GRPO training loop in [`fab_yield_agent_training.ipynb`](https://huggingface.co/spaces/PranjalZetsu/semiconductor-yield-agent/blob/main/fab_yield_agent_training.ipynb) — runnable on Google Colab (A100).
+
+Experiment tracking: **Weights & Biases** → [tensor-titans-fab](https://wandb.ai/gamersdelightxd-/tensor-titans-fab?nw=nwuserpranjal_dubey)
 
 Curriculum: Easy (5 params, >80%) → Medium (10 params, >88%) → Hard (15 params, >92%)
