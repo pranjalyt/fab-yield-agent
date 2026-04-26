@@ -30,5 +30,5 @@ COPY --chown=user . .
 # 7. Switch to USER for final execution (HF Security Requirement)
 USER user
 
-# 8. Launch the server (which triggers train.py via the startup event)
+# 8. Launch the API server only (training is triggered manually via Colab)
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]

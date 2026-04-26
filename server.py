@@ -94,15 +94,15 @@ def get_observation_space():
 import subprocess
 import os
 
-@app.on_event("startup")
-def startup_event():
-    print("🚀 Booting Server and triggering Training Run...")
+# @app.on_event("startup")
+# def startup_event():
+#     print("🚀 Booting Server and triggering Training Run...")
     
-    # 1. Set the exact environment variables
-    train_env = os.environ.copy()
-    train_env["EPOCHS"] = "150"          # Change to "150" when ready for the real burn
-    train_env["GROUP_SIZE"] = "12"       # G=8 for the A10G math stability
-    train_env["SPACE_URL"] = "http://localhost:7860"
+#     # 1. Set the exact environment variables
+#     train_env = os.environ.copy()
+#     train_env["EPOCHS"] = "150"          # Change to "150" when ready for the real burn
+#     train_env["GROUP_SIZE"] = "12"       # G=8 for the A10G math stability
+#     train_env["SPACE_URL"] = "http://localhost:7860"
     
-    # 2. Launch train.py as an independent background process
-    subprocess.Popen(["python", "train.py"], env=train_env)
+#     # 2. Launch train.py as an independent background process
+#     subprocess.Popen(["python", "train.py"], env=train_env)
